@@ -585,8 +585,8 @@ func (b *BackupContext) backupCollectionExecute(ctx context.Context, collectionB
 		segmentIDs := lo.Map(segmentBackupInfos, func(segment *backuppb.SegmentBackupInfo, _ int) int64 {
 			return segment.GetSegmentId()
 		})
-		err := b.copySegments(ctx, backupBinlogPath, segmentIDs)
-		if err != nil {
+
+		if err := b.copySegments(ctx, backupBinlogPath, segmentIDs); err != nil {
 			return err
 		}
 	}
@@ -776,13 +776,12 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 }
 
 func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, id string) error {
+	log.Info("start writeBackupInfoMeta", zap.String("backupName", id))
+	b.meta.CleanBinlogInfo(id)
+	log.Info("clean binlog info done", zap.String("backupName", id))
 	backupInfo := b.meta.GetFullMeta(id)
-	log.Debug("Final backupInfo", zap.String("backupInfo", backupInfo.String()))
+	log.Info("final backup size", zap.Int64("size", backupInfo.GetSize()))
 	output, _ := serialize(backupInfo)
-	log.Debug("backup meta", zap.String("value", string(output.BackupMetaBytes)))
-	log.Debug("collection meta", zap.String("value", string(output.CollectionMetaBytes)))
-	log.Debug("partition meta", zap.String("value", string(output.PartitionMetaBytes)))
-	log.Debug("segment meta", zap.String("value", string(output.SegmentMetaBytes)))
 
 	collectionBackups := backupInfo.GetCollectionBackups()
 	collectionPositions := make(map[string][]*backuppb.ChannelPosition, 0)
@@ -801,7 +800,6 @@ func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, id string) erro
 	if err != nil {
 		return err
 	}
-	log.Debug("channel cp meta", zap.String("value", string(channelCPsBytes)))
 
 	b.getBackupStorageClient().Write(ctx, b.backupBucketName, BackupMetaPath(b.backupRootPath, backupInfo.GetName()), output.BackupMetaBytes)
 	b.getBackupStorageClient().Write(ctx, b.backupBucketName, CollectionMetaPath(b.backupRootPath, backupInfo.GetName()), output.CollectionMetaBytes)
@@ -812,8 +810,7 @@ func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, id string) erro
 
 	log.Info("finish writeBackupInfoMeta",
 		zap.String("path", BackupDirPath(b.backupRootPath, backupInfo.GetName())),
-		zap.String("backupName", backupInfo.GetName()),
-		zap.String("backup meta", string(output.BackupMetaBytes)))
+		zap.String("backupName", backupInfo.GetName()))
 	return nil
 }
 
@@ -988,7 +985,6 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 		})
 	}
 
-	log.Info("wayblink debug", zap.Int64("collID", segmentBackupInfo.GetCollectionId()), zap.Int64("partID", segmentBackupInfo.GetPartitionId()), zap.Int64("segID", segmentBackupInfo.GetSegmentId()))
 	deltaLogPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "delta_log", segmentBackupInfo.GetCollectionId(), segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId())
 	deltaFieldsLogDir, _, _ := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, deltaLogPath, false)
 	deltaLogs := make([]*backuppb.FieldBinlog, 0)
@@ -1039,7 +1035,7 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	//segmentBackupInfo.Deltalogs = deltaLogs
 	segmentBackupInfo.Size = size
 	segmentBackupInfo.IsL0 = isL0
-	b.meta.UpdateSegment(segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId(), setSegmentBinlogs(insertLogs), setSegmentDeltaBinlogs(deltaLogs), setSegmentSize(size), setSegmentL0(isL0))
+	b.meta.UpdateSegment(segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId(), setSegmentSize(size), setSegmentBinlogs(insertLogs), setSegmentDeltaBinlogs(deltaLogs), setSegmentL0(isL0))
 	log.Debug("fill segment info", zap.Int64("segId", segmentBackupInfo.GetSegmentId()), zap.Int64("size", size))
 	return nil
 }

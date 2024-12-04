@@ -10,7 +10,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"go.uber.org/zap"
 	"net/http"
-	"net/http/pprof"
+	_ "net/http/pprof"
 )
 
 const (
@@ -82,7 +82,6 @@ func (s *Server) registerHTTPServer() {
 // registerHTTPServer register the http server, panic when failed
 func (s *Server) registerProfilePort() {
 	go func() {
-		http.HandleFunc("/debug/pprof/heap", pprof.Index)
 		http.ListenAndServe("localhost:8089", nil)
 	}()
 }

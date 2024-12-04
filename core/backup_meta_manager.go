@@ -457,6 +457,21 @@ func (meta *MetaManager) GetBackupByCollectionID(collectionID int64) *backuppb.B
 	return meta.backups[backupID]
 }
 
+func (meta *MetaManager) CleanBinlogInfo(id string) {
+	meta.mu.Lock()
+	defer meta.mu.Unlock()
+	collections := meta.collections[id]
+	for _, collection := range collections {
+		for _, partition := range meta.partitions[collection.GetCollectionId()] {
+			for _, segment := range meta.segments[partition.GetPartitionId()] {
+				segment.Binlogs = nil
+				segment.Statslogs = nil
+				segment.Deltalogs = nil
+			}
+		}
+	}
+}
+
 func (meta *MetaManager) GetFullMeta(id string) *backuppb.BackupInfo {
 	meta.mu.Lock()
 	defer meta.mu.Unlock()
