@@ -955,7 +955,17 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 
 	insertPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "insert_log", segmentBackupInfo.GetCollectionId(), segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId())
 	log.Debug("insertPath", zap.String("bucket", b.milvusBucketName), zap.String("insertPath", insertPath))
-	fieldsLogDir, _, err := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, insertPath, false)
+	var fieldsLogDir []string
+	err := retry.Do(ctx, func() error {
+		dirs, _, err := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, insertPath, false)
+		if err != nil {
+			return err
+		}
+
+		fieldsLogDir = dirs
+		return nil
+	}, retry.Attempts(5), retry.Sleep(2*time.Second))
+
 	// handle segment level
 	isL0 := false
 	if len(fieldsLogDir) == 0 {
@@ -968,7 +978,22 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	log.Debug("fieldsLogDir", zap.String("bucket", b.milvusBucketName), zap.Any("fieldsLogDir", fieldsLogDir))
 	insertLogs := make([]*backuppb.FieldBinlog, 0)
 	for _, fieldLogDir := range fieldsLogDir {
-		binlogPaths, sizes, _ := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, fieldLogDir, false)
+		var binlogPaths []string
+		var sizes []int64
+		err := retry.Do(ctx, func() error {
+			paths, s, err := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, fieldLogDir, false)
+			if err != nil {
+				return err
+			}
+			binlogPaths = paths
+			sizes = s
+			return nil
+		}, retry.Attempts(5), retry.Sleep(2*time.Second))
+		if err != nil {
+			log.Error("Fail to list field path", zap.String("fieldLogDir", fieldLogDir), zap.Error(err))
+			return err
+		}
+
 		fieldIdStr := strings.Replace(strings.Replace(fieldLogDir, insertPath, "", 1), SEPERATOR, "", -1)
 		fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
 		binlogs := make([]*backuppb.Binlog, 0)
@@ -986,10 +1011,32 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	}
 
 	deltaLogPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "delta_log", segmentBackupInfo.GetCollectionId(), segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId())
-	deltaFieldsLogDir, _, _ := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, deltaLogPath, false)
+	var deltaFieldsLogDirs []string
+	err = retry.Do(ctx, func() error {
+		dirs, _, err := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, deltaLogPath, false)
+		if err != nil {
+			return err
+		}
+		deltaFieldsLogDirs = dirs
+		return nil
+	}, retry.Attempts(5), retry.Sleep(2*time.Second))
 	deltaLogs := make([]*backuppb.FieldBinlog, 0)
-	for _, deltaFieldLogDir := range deltaFieldsLogDir {
-		binlogPaths, sizes, _ := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, deltaFieldLogDir, false)
+	for _, deltaFieldLogDir := range deltaFieldsLogDirs {
+		var binlogPaths []string
+		var sizes []int64
+		err := retry.Do(ctx, func() error {
+			paths, s, err := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, deltaFieldLogDir, false)
+			if err != nil {
+				return err
+			}
+			binlogPaths = paths
+			sizes = s
+			return nil
+		}, retry.Attempts(5), retry.Sleep(2*time.Second))
+		if err != nil {
+			log.Error("Fail to list delta field path", zap.String("deltaFieldLogDir", deltaFieldLogDir), zap.Error(err))
+			return err
+		}
 		fieldIdStr := strings.Replace(strings.Replace(deltaFieldLogDir, deltaLogPath, "", 1), SEPERATOR, "", -1)
 		fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
 		binlogs := make([]*backuppb.Binlog, 0)
