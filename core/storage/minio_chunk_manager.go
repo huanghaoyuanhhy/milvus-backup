@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"strings"
 
 	"github.com/minio/minio-go/v7"
@@ -419,6 +420,12 @@ func (mcm *MinioChunkManager) ListWithPrefix(ctx context.Context, bucketName str
 	objects := mcm.Client.ListObjects(ctx, bucketName, minio.ListObjectsOptions{Prefix: prefix, Recursive: recursive})
 	var objectsKeys []string
 	var sizes []int64
+
+	r := rand.IntN(2)
+	if r == 1 {
+		log.Warn("random error")
+		return nil, nil, errors.New("random error")
+	}
 
 	for object := range objects {
 		if object.Err != nil {
