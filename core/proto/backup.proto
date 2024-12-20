@@ -164,6 +164,8 @@ message CreateBackupRequest {
   string gc_pause_address = 10;
   // whether backup RBAC
   bool rbac = 11;
+  // ignore users when backup RBAC
+  string ignore_users = 12;
 }
 
 /**

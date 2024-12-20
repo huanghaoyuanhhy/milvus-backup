@@ -10,7 +10,6 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"go.uber.org/zap"
 	"net/http"
-	"net/http/pprof"
 )
 
 const (
@@ -57,7 +56,6 @@ func (s *Server) Init() {
 }
 
 func (s *Server) Start() {
-	s.registerProfilePort()
 	err := s.engine.Run(s.config.port)
 	if err != nil {
 		log.Error("Failed to start server", zap.Error(err))
@@ -77,14 +75,6 @@ func (s *Server) registerHTTPServer() {
 	NewHandlers(s.backupContext).RegisterRoutesTo(apiv1)
 	http.Handle("/", ginHandler)
 	s.engine = ginHandler
-}
-
-// registerHTTPServer register the http server, panic when failed
-func (s *Server) registerProfilePort() {
-	go func() {
-		http.HandleFunc("/debug/pprof/heap", pprof.Index)
-		http.ListenAndServe("localhost:8089", nil)
-	}()
 }
 
 func handleHello(c *gin.Context) (interface{}, error) {

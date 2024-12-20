@@ -441,12 +441,14 @@
             "type": "object",
             "properties": {
                 "autoID": {
+                    "description": "deprecated later, keep compatible with c++ part now",
                     "type": "boolean"
                 },
                 "description": {
                     "type": "string"
                 },
                 "enable_dynamic_field": {
+                    "description": "mark whether this table has the dynamic field function enabled.",
                     "type": "boolean"
                 },
                 "fields": {
@@ -469,6 +471,10 @@
                 3,
                 4
             ],
+            "x-enum-comments": {
+                "ConsistencyLevel_Customized": "Users pass their own `guarantee_timestamp`.",
+                "ConsistencyLevel_Session": "default in PyMilvus"
+            },
             "x-enum-varnames": [
                 "ConsistencyLevel_Strong",
                 "ConsistencyLevel_Session",
@@ -515,6 +521,10 @@
                     "description": "gc pause seconds, set it larger than the time cost of backup",
                     "type": "integer"
                 },
+                "ignore_users": {
+                    "description": "ignore users when backup RBAC",
+                    "type": "string"
+                },
                 "meta_only": {
                     "description": "only backup meta, including collection schema and index info",
                     "type": "boolean"
@@ -550,6 +560,9 @@
                 103,
                 104
             ],
+            "x-enum-comments": {
+                "DataType_VarChar": "variable-length strings with a specified maximum length"
+            },
             "x-enum-varnames": [
                 "DataType_None",
                 "DataType_Bool",
@@ -615,16 +628,27 @@
                     "$ref": "#/definitions/backuppb.DataType"
                 },
                 "default_value": {
-                    "$ref": "#/definitions/backuppb.ValueField"
+                    "description": "default_value only support scalars except array and json for now",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/backuppb.ValueField"
+                        }
+                    ]
                 },
                 "default_value_proto": {
+                    "description": "json not support marshall oneof, so use proto string",
                     "type": "string"
                 },
                 "description": {
                     "type": "string"
                 },
                 "element_type": {
-                    "$ref": "#/definitions/backuppb.DataType"
+                    "description": "For array type, the element type is stored here",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/backuppb.DataType"
+                        }
+                    ]
                 },
                 "fieldID": {
                     "type": "integer"
@@ -636,9 +660,11 @@
                     }
                 },
                 "is_dynamic": {
+                    "description": "mark whether this field is the dynamic field",
                     "type": "boolean"
                 },
                 "is_partition_key": {
+                    "description": "enable logic partitions",
                     "type": "boolean"
                 },
                 "is_primary_key": {
@@ -651,7 +677,12 @@
                     "type": "boolean"
                 },
                 "state": {
-                    "$ref": "#/definitions/backuppb.FieldState"
+                    "description": "To keep compatible with older version, the default state is `Created`.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/backuppb.FieldState"
+                        }
+                    ]
                 },
                 "type_params": {
                     "type": "array",
@@ -1224,7 +1255,7 @@
             "type": "object",
             "properties": {
                 "data": {
-                    "description": "Types that are valid to be assigned to Data:\n\n\t*ValueField_BoolData\n\t*ValueField_IntData\n\t*ValueField_LongData\n\t*ValueField_FloatData\n\t*ValueField_DoubleData\n\t*ValueField_StringData\n\t*ValueField_BytesData"
+                    "description": "Types that are assignable to Data:\n\n\t*ValueField_BoolData\n\t*ValueField_IntData\n\t*ValueField_LongData\n\t*ValueField_FloatData\n\t*ValueField_DoubleData\n\t*ValueField_StringData\n\t*ValueField_BytesData"
                 }
             }
         }

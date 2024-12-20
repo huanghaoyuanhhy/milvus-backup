@@ -1,6 +1,6 @@
 module github.com/zilliztech/milvus-backup
 
-go 1.18
+go 1.22
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.7.0

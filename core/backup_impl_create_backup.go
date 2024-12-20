@@ -36,7 +36,9 @@ func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.Crea
 		zap.String("databaseCollections", utils.GetCreateDBCollections(request)),
 		zap.Bool("async", request.GetAsync()),
 		zap.Bool("force", request.GetForce()),
-		zap.Bool("metaOnly", request.GetMetaOnly()))
+		zap.Bool("metaOnly", request.GetMetaOnly()),
+		zap.Bool("rbac", request.GetRbac()),
+		zap.String("ignoreUsers", request.GetIgnoreUsers()))
 
 	resp := &backuppb.BackupInfoResponse{
 		RequestId: request.GetRequestId(),
@@ -724,7 +726,7 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_SUCCESS), setEndTime(time.Now().UnixNano()/int64(time.Millisecond)))
 
 	if request.GetRbac() {
-		err = b.backupRBAC(ctx, backupInfo)
+		err = b.backupRBAC(ctx, backupInfo.Id, request.GetIgnoreUsers())
 		if err != nil {
 			backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
 			backupInfo.ErrorMessage = err.Error()
@@ -1017,7 +1019,7 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	return nil
 }
 
-func (b *BackupContext) backupRBAC(ctx context.Context, backupInfo *backuppb.BackupInfo) error {
+func (b *BackupContext) backupRBAC(ctx context.Context, backupID string, ignoreUsers string) error {
 	log.Info("backup RBAC")
 	rbacMeta, err := b.getMilvusClient().BackupRBAC(ctx)
 	if err != nil {
@@ -1025,18 +1027,24 @@ func (b *BackupContext) backupRBAC(ctx context.Context, backupInfo *backuppb.Bac
 		return err
 	}
 
-	users := make([]*backuppb.UserInfo, 0)
-	roles := make([]*backuppb.RoleEntity, 0)
-	grants := make([]*backuppb.GrantEntity, 0)
+	users := make([]*backuppb.UserInfo, 0, len(rbacMeta.Users))
+	roles := make([]*backuppb.RoleEntity, 0, len(rbacMeta.Roles))
+	grants := make([]*backuppb.GrantEntity, 0, len(rbacMeta.RoleGrants))
 
+	ius := strings.Split(ignoreUsers, ",")
+	ignoreU := lo.SliceToMap(ius, func(item string) (string, struct{}) { return item, struct{}{} })
 	for _, user := range rbacMeta.Users {
-		roles := lo.Map(user.Roles, func(role string, index int) *backuppb.RoleEntity {
+		if _, ok := ignoreU[user.Name]; ok {
+			continue
+		}
+
+		userRoles := lo.Map(user.Roles, func(role string, index int) *backuppb.RoleEntity {
 			return &backuppb.RoleEntity{Name: role}
 		})
 		userP := &backuppb.UserInfo{
 			User:     user.Name,
 			Password: user.Password,
-			Roles:    roles,
+			Roles:    userRoles,
 		}
 		users = append(users, userP)
 	}
@@ -1077,6 +1085,6 @@ func (b *BackupContext) backupRBAC(ctx context.Context, backupInfo *backuppb.Bac
 	}
 
 	log.Info("backup RBAC", zap.Int("users", len(users)), zap.Int("roles", len(roles)), zap.Int("grants", len(grants)))
-	b.meta.UpdateBackup(backupInfo.Id, setRBACMeta(rbacPb))
+	b.meta.UpdateBackup(backupID, setRBACMeta(rbacPb))
 	return nil
 }
