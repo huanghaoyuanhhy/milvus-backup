@@ -65,3 +65,21 @@ func TestAIMDLimiter_Wait(t *testing.T) {
 		assert.Error(t, err)
 	})
 }
+
+func TestIncreaseFactor(t *testing.T) {
+	t.Run("LessThan1", func(t *testing.T) {
+		assert.Equal(t, 0.1, increaseFactor(0.5))
+	})
+
+	t.Run("LessThan10", func(t *testing.T) {
+		assert.Equal(t, 1.0, increaseFactor(5))
+	})
+
+	t.Run("LessThan1000", func(t *testing.T) {
+		assert.Equal(t, 10.0, increaseFactor(500))
+	})
+
+	t.Run("MoreThan1000", func(t *testing.T) {
+		assert.Equal(t, 100.0, increaseFactor(5000))
+	})
+}

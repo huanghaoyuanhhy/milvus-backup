@@ -131,7 +131,7 @@ func isRateLimitError(err error) bool {
 
 func newRateLimiters() map[string]*common.AIMDLimiter {
 	return map[string]*common.AIMDLimiter{
-		"flush":      common.NewAIMDLimiter(1, 50, 5),
+		"flush":      common.NewAIMDLimiter(0.01, 50, 5),
 		"createColl": common.NewAIMDLimiter(1, 100, 5),
 	}
 }
@@ -397,13 +397,12 @@ func (g *GrpcClient) GetPersistentSegmentInfo(ctx context.Context, db, collName 
 }
 
 func (g *GrpcClient) Flush(ctx context.Context, db, collName string) (*milvuspb.FlushResponse, error) {
-	ctx = g.newCtxWithDB(ctx, db)
 	limiter := g.limiters["flush"]
-
 	if err := limiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("client: flush wait: %w", err)
 	}
 
+	ctx = g.newCtxWithDB(ctx, db)
 	resp, err := g.srv.Flush(ctx, &milvuspb.FlushRequest{CollectionNames: []string{collName}})
 	if err := checkResponse(resp, err); err != nil {
 		if isRateLimitError(err) {
@@ -517,13 +516,12 @@ type CreateCollectionInput struct {
 }
 
 func (g *GrpcClient) CreateCollection(ctx context.Context, input CreateCollectionInput) error {
-	ctx = g.newCtxWithDB(ctx, input.DB)
 	limiter := g.limiters["createColl"]
-
 	if err := limiter.Wait(ctx); err != nil {
 		return fmt.Errorf("client: create collection wait: %w", err)
 	}
 
+	ctx = g.newCtxWithDB(ctx, input.DB)
 	bs, err := proto.Marshal(input.Schema)
 	if err != nil {
 		return fmt.Errorf("client: create collection marshal proto: %w", err)
@@ -535,7 +533,6 @@ func (g *GrpcClient) CreateCollection(ctx context.Context, input CreateCollectio
 		ShardsNum:        input.ShardNum,
 		NumPartitions:    int64(input.PartitionNum),
 	}
-
 	resp, err := g.srv.CreateCollection(ctx, in)
 	if err := checkResponse(resp, err); err != nil {
 		if isRateLimitError(err) {

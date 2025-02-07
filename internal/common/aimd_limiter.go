@@ -65,12 +65,26 @@ func (a *AIMDLimiter) Wait(ctx context.Context) error {
 	}
 }
 
+// increaseFactor returns the factor to increase the current RPS.
+// The factor is calculated by the current RPS.
+// (﹣Float64Max, 0.9) -> 0.1, [1, 10) -> 1, [10, 1000) -> 10, [1000, Float64Max) -> 100
+func increaseFactor(curRPS float64) float64 {
+	if curRPS < 1 {
+		return 0.1
+	} else if curRPS < 10 {
+		return 1
+	} else if curRPS < 1000 {
+		return 10
+	}
+	return 100
+}
+
 func (a *AIMDLimiter) Success() {
 	if a.curRPS.Load() >= a.maxRPS {
 		return
 	}
 
-	a.curRPS.Add(1)
+	a.curRPS.Add(increaseFactor(a.curRPS.Load()))
 }
 
 func (a *AIMDLimiter) Failure() {
