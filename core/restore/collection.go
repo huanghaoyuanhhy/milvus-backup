@@ -811,7 +811,6 @@ func (ct *CollectionTask) bulkInsertViaRestful(ctx context.Context, partition st
 		CollectionName: ct.task.GetTargetCollectionName(),
 		PartitionName:  partition,
 		Paths:          paths,
-		BackupTS:       ct.task.GetCollBackup().BackupTimestamp,
 		IsL0:           isL0,
 	}
 	jobID, err := ct.restfulCli.BulkInsert(ctx, in)
