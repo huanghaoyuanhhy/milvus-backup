@@ -33,7 +33,7 @@ import (
 const (
 	_bulkInsertTimeout             = 60 * time.Minute
 	_bulkInsertCheckInterval       = 3 * time.Second
-	_bulkInsertRestfulAPIChunkSize = 256
+	_bulkInsertRestfulAPIChunkSize = 64
 )
 
 type tearDownFn func(ctx context.Context) error
