@@ -55,17 +55,19 @@ func (a *AzureReader) Close() error { return nil }
 var _ Client = (*AzureClient)(nil)
 
 func newAzureClient(cfg Config) (*AzureClient, error) {
+	// backwards compatible, don't know why we kept the "blob" in the code instead of letting it be input externally.
+	ep := fmt.Sprintf("https://%s.blob.%s", cfg.Credential.AK, cfg.Endpoint)
 	switch cfg.Credential.Type {
 	case IAM:
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure default azure credential %w", err)
 		}
-		cli, err := azblob.NewClient(cfg.Endpoint, cred, nil)
+		cli, err := azblob.NewClient(ep, cred, nil)
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure client %w", err)
 		}
-		sasCli, err := service.NewClient(cfg.Endpoint, cred, nil)
+		sasCli, err := service.NewClient(ep, cred, nil)
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure service client %w", err)
 		}
@@ -76,11 +78,11 @@ func newAzureClient(cfg Config) (*AzureClient, error) {
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure shared key credential %w", err)
 		}
-		cli, err := azblob.NewClientWithSharedKeyCredential(cfg.Endpoint, cred, nil)
+		cli, err := azblob.NewClientWithSharedKeyCredential(ep, cred, nil)
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure client %w", err)
 		}
-		sasCli, err := service.NewClientWithSharedKeyCredential(cfg.Endpoint, cred, nil)
+		sasCli, err := service.NewClientWithSharedKeyCredential(ep, cred, nil)
 		return &AzureClient{cfg: cfg, cli: cli, sasCli: sasCli}, nil
 	default:
 		return nil, fmt.Errorf("storage: azure unsupported credential type: %s", cfg.Credential.Type.String())
