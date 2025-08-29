@@ -13,6 +13,13 @@ func TestMetaKey(t *testing.T) {
 	assert.Equal(t, expect, r)
 }
 
+func TestMetaDir(t *testing.T) {
+	backupDir := "base/backup/backup1"
+	expect := "base/backup/backup1/meta/"
+	r := MetaDir(backupDir)
+	assert.Equal(t, expect, r)
+}
+
 type testCase struct {
 	base     string
 	expected string
