@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -339,21 +340,88 @@ func (ct *collectionTask) ezk() string {
 	return ""
 }
 
+type sortableFields []*schemapb.FieldSchema
+
+func (s sortableFields) Len() int           { return len(s) }
+func (s sortableFields) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+func (s sortableFields) Less(i, j int) bool { return s[i].GetFieldID() < s[j].GetFieldID() }
+
+// fields returns two types of fields:
+// 1. fields that can be created in CreateCollection API
+// 2. fields that need to be created by addField API
+//
+// If the original collection had addField operations, the $meta field might not be at the end of the fields list.
+// However, the CreateCollection API always appends the $meta field to the end.
+// This discrepancy in field order between the new collection and the backup file can cause restore errors.
+// Therefore, we stop processing fields if the field IDs are not continuous.
+// The remaining fields will be imported via addField.
+func (ct *collectionTask) fields() ([]*schemapb.FieldSchema, []*schemapb.FieldSchema, error) {
+	fields, err := ct.convFields(ct.collBackup.GetSchema().GetFields())
+	if err != nil {
+		return nil, nil, fmt.Errorf("collection: get fields: %w", err)
+	}
+
+	if !ct.collBackup.GetSchema().GetEnableDynamicField() {
+		return fields, nil, nil
+	}
+
+	sort.Sort(sortableFields(fields))
+
+	var createFields, addFields []*schemapb.FieldSchema
+	if len(fields) == 0 {
+		return createFields, addFields, nil
+	}
+
+	createFields = append(createFields, fields[0])
+	isContinuous := true
+	for i := 1; i < len(fields); i++ {
+		prevField := fields[i-1]
+		currField := fields[i]
+
+		if isContinuous && currField.GetFieldID() != prevField.GetFieldID()+1 {
+			isContinuous = false
+		}
+
+		if isContinuous {
+			createFields = append(createFields, currField)
+		} else {
+			addFields = append(addFields, currField)
+		}
+	}
+
+	ct.logger.Info("fields", zap.Any("create_fields", createFields), zap.Any("add_fields", addFields))
+	return createFields, addFields, nil
+}
+
+func (ct *collectionTask) addFields(ctx context.Context, fields []*schemapb.FieldSchema) error {
+	if len(fields) == 0 {
+		return nil
+	}
+
+	ct.logger.Info("add fields", zap.Any("fields", fields))
+
+	// add fields
+	for _, field := range fields {
+		if err := ct.grpcCli.AddField(ctx, ct.targetNS.DBName(), ct.targetNS.CollName(), field); err != nil {
+			return fmt.Errorf("restore: add field %s id %d: %w", field.GetName(), field.GetFieldID(), err)
+		}
+	}
+
+	return nil
+}
+
 func (ct *collectionTask) createColl(ctx context.Context) error {
 	if ct.option.SkipCreateCollection {
 		ct.logger.Info("skip create collection")
 		return nil
 	}
 
-	fields, err := ct.convFields(ct.collBackup.GetSchema().GetFields())
+	createFields, addFields, err := ct.fields()
 	if err != nil {
 		return fmt.Errorf("restore_collection: failed to get fields: %w", err)
 	}
-	ct.logger.Info("restore collection fields", zap.Any("fields", fields))
 
 	functions := ct.functions()
-	ct.logger.Info("restore collection functions", zap.Any("functions", functions))
-
 	structArrayFields, err := ct.structArrayFields()
 	if err != nil {
 		return fmt.Errorf("restore_collection: failed to get struct array fields: %w", err)
@@ -364,11 +432,12 @@ func (ct *collectionTask) createColl(ctx context.Context) error {
 		Description:        ct.collBackup.GetSchema().GetDescription(),
 		AutoID:             ct.collBackup.GetSchema().GetAutoID(),
 		Functions:          functions,
-		Fields:             fields,
+		Fields:             createFields,
 		EnableDynamicField: ct.collBackup.GetSchema().GetEnableDynamicField(),
 		Properties:         pbconv.BakKVToMilvusKV(ct.collBackup.GetSchema().GetProperties()),
 		StructArrayFields:  structArrayFields,
 	}
+	ct.logger.Info("create collection", zap.Any("schema", schema))
 
 	opt := milvus.CreateCollectionInput{
 		DB:           ct.targetNS.DBName(),
@@ -380,6 +449,10 @@ func (ct *collectionTask) createColl(ctx context.Context) error {
 	}
 	if err := ct.grpcCli.CreateCollection(ctx, opt); err != nil {
 		return fmt.Errorf("restore_collection: call create collection api after retry: %w", err)
+	}
+
+	if err := ct.addFields(ctx, addFields); err != nil {
+		return fmt.Errorf("restore_collection: add fields: %w", err)
 	}
 
 	return nil

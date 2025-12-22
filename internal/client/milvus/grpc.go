@@ -95,6 +95,7 @@ type Grpc interface {
 	GetBulkInsertState(ctx context.Context, taskID int64) (*milvuspb.GetImportStateResponse, error)
 	CreateCollection(ctx context.Context, input CreateCollectionInput) error
 	CreatePartition(ctx context.Context, db, collName, partitionName string) error
+	AddField(ctx context.Context, db, collName string, field *schemapb.FieldSchema) error
 	HasPartition(ctx context.Context, db, collName, partitionName string) (bool, error)
 	CreateIndex(ctx context.Context, input CreateIndexInput) error
 	DropIndex(ctx context.Context, db, collName, indexName string) error
@@ -776,6 +777,23 @@ func (g *GrpcClient) HasPartition(ctx context.Context, db, collName string, part
 		return false, fmt.Errorf("client: has partition failed: %w", err)
 	}
 	return resp.GetValue(), nil
+}
+
+func (g *GrpcClient) AddField(ctx context.Context, db, collName string, field *schemapb.FieldSchema) error {
+	ctx = g.newCtxWithDB(ctx, db)
+
+	bytes, err := proto.Marshal(field)
+	if err != nil {
+		return fmt.Errorf("client: add field marshal proto: %w", err)
+	}
+
+	in := &milvuspb.AddCollectionFieldRequest{CollectionName: collName, Schema: bytes}
+	resp, err := g.srv.AddCollectionField(ctx, in)
+	if err := checkResponse(resp, err); err != nil {
+		return fmt.Errorf("client: add field: %w", err)
+	}
+
+	return nil
 }
 
 func mapKvPairs(m map[string]string) []*commonpb.KeyValuePair {
