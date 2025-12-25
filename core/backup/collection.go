@@ -231,20 +231,18 @@ func (ct *CollectionTask) convStructArrayFields(fieldSchemas []*schemapb.StructA
 }
 
 func (ct *CollectionTask) convSchema(schema *schemapb.CollectionSchema) (*backuppb.CollectionSchema, error) {
-	fields, err := ct.convFields(schema.Fields)
+	fields, err := ct.convFields(schema.GetFields())
 	if err != nil {
 		return nil, fmt.Errorf("backup: convert fields %w", err)
 	}
-	ct.logger.Info("collection fields", zap.Any("fields", fields))
 
-	functions := ct.convFunctions(schema.Functions)
-	ct.logger.Info("collection functions", zap.Any("functions", functions))
+	functions := ct.convFunctions(schema.GetFunctions())
+	ct.logger.Info("collection ", zap.Any("functions", functions))
 
-	structArrayFields, err := ct.convStructArrayFields(schema.StructArrayFields)
+	structArrayFields, err := ct.convStructArrayFields(schema.GetStructArrayFields())
 	if err != nil {
 		return nil, fmt.Errorf("backup: convert struct array fields %w", err)
 	}
-	ct.logger.Info("collection struct array fields", zap.Any("struct_array_fields", structArrayFields))
 
 	bakSchema := &backuppb.CollectionSchema{
 		Name:               schema.GetName(),
@@ -372,6 +370,8 @@ func (ct *CollectionTask) backupDDL(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("backup: describe collection %w", err)
 	}
+	ct.logger.Info("describe collection response", zap.Any("response", descResp))
+
 	schema, err := ct.convSchema(descResp.GetSchema())
 	if err != nil {
 		return fmt.Errorf("backup: convert schema %w", err)
