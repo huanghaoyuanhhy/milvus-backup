@@ -161,6 +161,7 @@ func (ddlt *collectionDDLTask) createColl() error {
 		Key:   common.ConsistencyLevel,
 		Value: ddlt.collBackup.GetConsistencyLevel().String(),
 	})
+	schema.Properties = append(schema.Properties, pbconv.BakKVToMilvusKV(ddlt.collBackup.GetProperties())...)
 	appendSysFields(schema)
 	appendDynamicField(schema)
 
