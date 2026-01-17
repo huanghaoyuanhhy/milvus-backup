@@ -357,6 +357,15 @@ func (dmlt *collectionDMLTask) Execute(ctx context.Context) error {
 		return fmt.Errorf("backup: get segments %w", err)
 	}
 
+	segments = lo.Filter(segments, func(seg *backuppb.SegmentBackupInfo, _ int) bool {
+		if seg.GetPartitionId() == 0 {
+			dmlt.logger.Warn("skip segment with partition id 0", zap.Int64("segment_id", seg.GetSegmentId()))
+			return false
+		}
+
+		return true
+	})
+
 	dmlt.metaBuilder.addSegments(segments)
 
 	size := lo.SumBy(segments, func(seg *backuppb.SegmentBackupInfo) int64 { return seg.GetSize() })

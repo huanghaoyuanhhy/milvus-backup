@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"github.com/milvus-io/milvus/pkg/v2/proto/indexpb"
+	"github.com/zilliztech/milvus-backup/internal/log"
+	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
@@ -99,6 +101,12 @@ func (builder *metaBuilder) addSegments(segments []*backuppb.SegmentBackupInfo) 
 			collBackup.L0Segments = append(collBackup.L0Segments, segment)
 		} else {
 			partBackup := builder.partitionBackups[segment.GetCollectionId()][segment.GetPartitionId()]
+			if partBackup == nil {
+				log.Error("partition backup info not found",
+					zap.Int64("collection_id", segment.GetCollectionId()),
+					zap.Int64("partition_id", segment.GetPartitionId()),
+					zap.Int64("segment_id", segment.GetSegmentId()))
+			}
 			partBackup.SegmentBackups = append(partBackup.SegmentBackups, segment)
 			partBackup.Size += segment.GetSize()
 		}
