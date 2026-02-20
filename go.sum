@@ -74,6 +74,8 @@ github.com/andybalholm/brotli v1.2.0/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUS
 github.com/benbjohnson/clock v1.1.0/go.mod h1:J11/hYXuz8f4ySSvYwY0FKfm+ezbsZBKZxNJlLklBHA=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
+github.com/bigsheeper/milvus/pkg/v2 v2.0.0-20260218074121-daecebad930d h1:kX3csLqAJiGAnrPW9gIdhJeT4hjmLGqQYOLzNg/7V2k=
+github.com/bigsheeper/milvus/pkg/v2 v2.0.0-20260218074121-daecebad930d/go.mod h1:IM1TfBQbAq93WibSAwhdayk6UzGV1ccNqUzVHbjnIuo=
 github.com/blang/semver/v4 v4.0.0 h1:1PFHFE6yCCTv8C1TeyNNarDzntLi7wMI5i/pzqYIsAM=
 github.com/blang/semver/v4 v4.0.0/go.mod h1:IbckMUScFkM3pff0VJDNKRiT6TG/YpiHIM2yvyW5YoQ=
 github.com/bytedance/gopkg v0.1.3 h1:TPBSwH8RsouGCBcMBktLt1AymVo2TVsBVCY4b6TnZ/M=
@@ -305,10 +307,8 @@ github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWE
 github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
 github.com/mattn/go-runewidth v0.0.19 h1:v++JhqYnZuu5jSKrk9RbgF5v4CGUjqRfBm05byFGLdw=
 github.com/mattn/go-runewidth v0.0.19/go.mod h1:XBkDxAl56ILZc9knddidhrOlY5R/pDhgLpndooCuJAs=
-github.com/milvus-io/milvus-proto/go-api/v2 v2.6.6-0.20251215075310-deda9c0dcece h1:s0TFMZBxADKSzIr7LW/TE3L/WgCuo7QOfzkYX92Xog0=
-github.com/milvus-io/milvus-proto/go-api/v2 v2.6.6-0.20251215075310-deda9c0dcece/go.mod h1:/6UT4zZl6awVeXLeE7UGDWZvXj3IWkRsh3mqsn0DiAs=
-github.com/milvus-io/milvus/pkg/v2 v2.6.4-0.20251211020913-b2c49d01978a h1:QBfo8x/UiFlXZ+ri/3HcnIyP6He75KyCXOwE0hMccec=
-github.com/milvus-io/milvus/pkg/v2 v2.6.4-0.20251211020913-b2c49d01978a/go.mod h1:I+fOJk0iqI6iRrAtyCKK1IpBbpssAL1qA0U7VPXCs9s=
+github.com/milvus-io/milvus-proto/go-api/v2 v2.6.6-0.20260129065928-046ced892c8b h1:Hpe1VKWnOt0EIgLgYgTA5Q6VLY2DOjMf1ikeaSVFOus=
+github.com/milvus-io/milvus-proto/go-api/v2 v2.6.6-0.20260129065928-046ced892c8b/go.mod h1:/6UT4zZl6awVeXLeE7UGDWZvXj3IWkRsh3mqsn0DiAs=
 github.com/minio/crc64nvme v1.1.1 h1:8dwx/Pz49suywbO+auHCBpCtlW1OfpcLN7wYgVR6wAI=
 github.com/minio/crc64nvme v1.1.1/go.mod h1:eVfm2fAzLlxMdUGc0EEBGSMmPwmXD5XiNRpnu9J3bvg=
 github.com/minio/md5-simd v1.1.2 h1:Gdi1DZK69+ZVMoNHRXJyNcxrMA4dSxoYHZSQbirFg34=
