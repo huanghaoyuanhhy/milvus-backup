@@ -16,7 +16,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.1.181
 	github.com/imroc/req/v3 v3.57.0
-	github.com/milvus-io/milvus-proto/go-api/v2 v2.6.6-0.20251215075310-deda9c0dcece
+	github.com/milvus-io/milvus-proto/go-api/v2 v2.6.6-0.20260129065928-046ced892c8b
 	github.com/minio/minio-go/v7 v7.0.97
 	github.com/samber/lo v1.52.0
 	github.com/spf13/cobra v1.10.2
@@ -181,3 +181,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251222181119-0a764e51fe1b // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )
+
+replace github.com/milvus-io/milvus/pkg/v2 => github.com/bigsheeper/milvus/pkg/v2 v2.0.0-20260218074121-daecebad930d
