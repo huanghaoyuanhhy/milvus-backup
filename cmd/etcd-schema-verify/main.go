@@ -13,6 +13,10 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	srcEndpoints := flag.String("src-endpoints", "", "source etcd endpoints (comma-separated, required)")
 	dstEndpoints := flag.String("dst-endpoints", "", "destination etcd endpoints (comma-separated, required)")
 	srcRootPath := flag.String("src-root-path", "by-dev", "source Milvus etcd rootPath")
@@ -25,7 +29,7 @@ func main() {
 	if *collection == "" || *srcEndpoints == "" || *dstEndpoints == "" {
 		fmt.Fprintf(os.Stderr, "Usage: etcd-schema-verify --src-endpoints=HOST:PORT --dst-endpoints=HOST:PORT --collection=NAME\n\n")
 		flag.PrintDefaults()
-		os.Exit(2)
+		return 2
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
@@ -36,29 +40,33 @@ func main() {
 		DialTimeout: 5 * time.Second,
 	})
 	if err != nil {
-		fatal("connect source etcd: %v", err)
+		fmt.Fprintf(os.Stderr, "error: connect source etcd: %v\n", err)
+		return 1
 	}
-	defer srcCli.Close()
+	defer func() { _ = srcCli.Close() }()
 
 	dstCli, err := clientv3.New(clientv3.Config{
 		Endpoints:   strings.Split(*dstEndpoints, ","),
 		DialTimeout: 5 * time.Second,
 	})
 	if err != nil {
-		fatal("connect destination etcd: %v", err)
+		fmt.Fprintf(os.Stderr, "error: connect destination etcd: %v\n", err)
+		return 1
 	}
-	defer dstCli.Close()
+	defer func() { _ = dstCli.Close() }()
 
 	srcReader := &reader{cli: srcCli, rootPath: *srcRootPath}
 	srcDump, err := srcReader.findCollection(ctx, *dbName, *collection)
 	if err != nil {
-		fatal("source: %v", err)
+		fmt.Fprintf(os.Stderr, "error: source: %v\n", err)
+		return 1
 	}
 
 	dstReader := &reader{cli: dstCli, rootPath: *dstRootPath}
 	dstDump, err := dstReader.findCollection(ctx, *dbName, *collection)
 	if err != nil {
-		fatal("target: %v", err)
+		fmt.Fprintf(os.Stderr, "error: target: %v\n", err)
+		return 1
 	}
 
 	diffs := diffCollections(srcDump, dstDump)
@@ -75,15 +83,12 @@ func main() {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(result); err != nil {
-		fatal("encode JSON: %v", err)
+		fmt.Fprintf(os.Stderr, "error: encode JSON: %v\n", err)
+		return 1
 	}
 
 	if !result.Aligned {
-		os.Exit(1)
+		return 1
 	}
-}
-
-func fatal(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "error: "+format+"\n", args...)
-	os.Exit(1)
+	return 0
 }
