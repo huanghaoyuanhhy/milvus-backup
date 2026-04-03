@@ -16,8 +16,13 @@ import (
 	"github.com/milvus-io/milvus/pkg/v2/proto/indexpb"
 )
 
+// kvGetter abstracts etcd Get for testability.
+type kvGetter interface {
+	Get(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.GetResponse, error)
+}
+
 type reader struct {
-	cli      *clientv3.Client
+	cli      kvGetter
 	rootPath string
 }
 

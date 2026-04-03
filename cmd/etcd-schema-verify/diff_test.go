@@ -6,114 +6,154 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestDiffCollections_Aligned(t *testing.T) {
-	src := &CollectionDump{
-		ID: 100, DBID: 1, Name: "coll", State: "CollectionCreated",
-		ShardsNum: 2, ConsistencyLevel: "Strong",
-		Fields: []FieldDump{
-			{FieldID: 1, Name: "pk", DataType: "Int64", IsPrimaryKey: true},
-			{FieldID: 2, Name: "vec", DataType: "FloatVector", TypeParams: map[string]string{"dim": "128"}},
-		},
-		Partitions: []PartitionDump{
-			{PartitionID: 10, PartitionName: "_default", State: "PartitionCreated"},
-		},
-	}
-	dst := &CollectionDump{
-		ID: 100, DBID: 1, Name: "coll", State: "CollectionCreated",
-		ShardsNum: 2, ConsistencyLevel: "Strong",
-		Fields: []FieldDump{
-			{FieldID: 1, Name: "pk", DataType: "Int64", IsPrimaryKey: true},
-			{FieldID: 2, Name: "vec", DataType: "FloatVector", TypeParams: map[string]string{"dim": "128"}},
-		},
-		Partitions: []PartitionDump{
-			{PartitionID: 10, PartitionName: "_default", State: "PartitionCreated"},
-		},
+func TestDiffCollections(t *testing.T) {
+	base := func() *CollectionDump {
+		return &CollectionDump{
+			ID: 100, DBID: 1, Name: "coll", State: "CollectionCreated",
+			ShardsNum: 2, ConsistencyLevel: "Strong",
+			Properties: map[string]string{"ttl": "3600"},
+			Fields: []FieldDump{
+				{FieldID: 1, Name: "pk", DataType: "Int64", IsPrimaryKey: true},
+				{FieldID: 2, Name: "vec", DataType: "FloatVector", TypeParams: map[string]string{"dim": "128"}},
+			},
+			Partitions: []PartitionDump{
+				{PartitionID: 10, PartitionName: "_default", State: "PartitionCreated"},
+			},
+			Indexes: []IndexDump{
+				{IndexID: 1, IndexName: "idx_vec", FieldID: 2, State: "Finished"},
+			},
+			Functions: []FunctionDump{
+				{ID: 1, Name: "bm25", Type: "BM25", InputFieldNames: []string{"text"}},
+			},
+		}
 	}
 
-	diffs := diffCollections(src, dst)
-	assert.Empty(t, diffs)
+	t.Run("Aligned", func(t *testing.T) {
+		diffs := diffCollections(base(), base())
+		assert.Empty(t, diffs)
+	})
+
+	t.Run("CollectionLevelDiffs", func(t *testing.T) {
+		dst := base()
+		dst.ID = 101
+		dst.ShardsNum = 4
+		dst.ConsistencyLevel = "Bounded"
+		dst.Properties = map[string]string{"ttl": "7200"}
+
+		diffs := diffCollections(base(), dst)
+		dm := toDiffMap(diffs)
+		assert.Equal(t, "100", dm["id"].Src)
+		assert.Equal(t, "101", dm["id"].Dst)
+		assert.Equal(t, "2", dm["shards_num"].Src)
+		assert.Equal(t, "4", dm["shards_num"].Dst)
+		assert.Equal(t, "Strong", dm["consistency_level"].Src)
+		assert.Equal(t, "Bounded", dm["consistency_level"].Dst)
+		assert.Equal(t, "3600", dm["properties.ttl"].Src)
+		assert.Equal(t, "7200", dm["properties.ttl"].Dst)
+	})
+
+	t.Run("DescriptionDiff", func(t *testing.T) {
+		src := base()
+		src.Description = "old"
+		dst := base()
+		dst.Description = "new"
+
+		diffs := diffCollections(src, dst)
+		dm := toDiffMap(diffs)
+		assert.Contains(t, dm, "description")
+	})
+
+	t.Run("DBIDDiff", func(t *testing.T) {
+		dst := base()
+		dst.DBID = 2
+
+		diffs := diffCollections(base(), dst)
+		dm := toDiffMap(diffs)
+		assert.Contains(t, dm, "db_id")
+	})
 }
 
-func TestDiffCollections_CollectionLevelDiff(t *testing.T) {
-	src := &CollectionDump{
-		ID: 100, DBID: 1, Name: "coll", State: "CollectionCreated",
-		ShardsNum: 2, ConsistencyLevel: "Strong",
-		Properties: map[string]string{"ttl": "3600"},
-	}
-	dst := &CollectionDump{
-		ID: 101, DBID: 1, Name: "coll", State: "CollectionCreated",
-		ShardsNum: 4, ConsistencyLevel: "Bounded",
-		Properties: map[string]string{"ttl": "7200"},
-	}
-
-	diffs := diffCollections(src, dst)
-
-	diffMap := toDiffMap(diffs)
-	assert.Equal(t, "100", diffMap["id"].Src)
-	assert.Equal(t, "101", diffMap["id"].Dst)
-	assert.Equal(t, "2", diffMap["shards_num"].Src)
-	assert.Equal(t, "4", diffMap["shards_num"].Dst)
-	assert.Equal(t, "Strong", diffMap["consistency_level"].Src)
-	assert.Equal(t, "Bounded", diffMap["consistency_level"].Dst)
-	assert.Equal(t, "3600", diffMap["properties.ttl"].Src)
-	assert.Equal(t, "7200", diffMap["properties.ttl"].Dst)
-}
-
-func TestDiffFields_MatchByID(t *testing.T) {
-	t.Run("FieldMissingSrc", func(t *testing.T) {
-		src := []FieldDump{}
-		dst := []FieldDump{{FieldID: 1, Name: "pk", DataType: "Int64"}}
-
+func TestDiffFields(t *testing.T) {
+	t.Run("MissingSrc", func(t *testing.T) {
 		var diffs []Diff
-		diffFields(&diffs, src, dst)
+		diffFields(&diffs, nil, []FieldDump{{FieldID: 1, Name: "pk"}})
 		assert.Len(t, diffs, 1)
 		assert.Equal(t, "<missing>", diffs[0].Src)
 		assert.Equal(t, "pk", diffs[0].Dst)
 		assert.Contains(t, diffs[0].Path, "id=1")
 	})
 
-	t.Run("FieldMissingDst", func(t *testing.T) {
-		src := []FieldDump{{FieldID: 1, Name: "pk", DataType: "Int64"}}
-		dst := []FieldDump{}
-
+	t.Run("MissingDst", func(t *testing.T) {
 		var diffs []Diff
-		diffFields(&diffs, src, dst)
+		diffFields(&diffs, []FieldDump{{FieldID: 1, Name: "pk"}}, nil)
 		assert.Len(t, diffs, 1)
 		assert.Equal(t, "pk", diffs[0].Src)
 		assert.Equal(t, "<missing>", diffs[0].Dst)
 	})
 
-	t.Run("FieldDataTypeDiff", func(t *testing.T) {
-		src := []FieldDump{{FieldID: 2, Name: "vec", DataType: "FloatVector"}}
-		dst := []FieldDump{{FieldID: 2, Name: "vec", DataType: "Float16Vector"}}
-
+	t.Run("DataTypeDiff", func(t *testing.T) {
 		var diffs []Diff
-		diffFields(&diffs, src, dst)
+		diffFields(&diffs,
+			[]FieldDump{{FieldID: 2, Name: "vec", DataType: "FloatVector"}},
+			[]FieldDump{{FieldID: 2, Name: "vec", DataType: "Float16Vector"}},
+		)
 		assert.Len(t, diffs, 1)
 		assert.Contains(t, diffs[0].Path, "data_type")
-		assert.Equal(t, "FloatVector", diffs[0].Src)
-		assert.Equal(t, "Float16Vector", diffs[0].Dst)
 	})
 
-	t.Run("FieldBoolDiff", func(t *testing.T) {
-		src := []FieldDump{{FieldID: 1, Name: "pk", IsPrimaryKey: true, Nullable: false}}
-		dst := []FieldDump{{FieldID: 1, Name: "pk", IsPrimaryKey: false, Nullable: true}}
-
+	t.Run("BoolFieldsDiff", func(t *testing.T) {
 		var diffs []Diff
-		diffFields(&diffs, src, dst)
+		diffFields(&diffs,
+			[]FieldDump{{FieldID: 1, Name: "pk", IsPrimaryKey: true, AutoID: true, IsPartitionKey: false, IsClusteringKey: false, IsFunctionOutput: false, Nullable: false}},
+			[]FieldDump{{FieldID: 1, Name: "pk", IsPrimaryKey: false, AutoID: false, IsPartitionKey: true, IsClusteringKey: true, IsFunctionOutput: true, Nullable: true}},
+		)
 		dm := toDiffMap(diffs)
 		assert.Contains(t, dm, "fields[id=1,name=pk].is_primary_key")
+		assert.Contains(t, dm, "fields[id=1,name=pk].auto_id")
+		assert.Contains(t, dm, "fields[id=1,name=pk].is_partition_key")
+		assert.Contains(t, dm, "fields[id=1,name=pk].is_clustering_key")
+		assert.Contains(t, dm, "fields[id=1,name=pk].is_function_output")
 		assert.Contains(t, dm, "fields[id=1,name=pk].nullable")
 	})
 
-	t.Run("FieldTypeParamsDiff", func(t *testing.T) {
-		src := []FieldDump{{FieldID: 2, Name: "vec", TypeParams: map[string]string{"dim": "128"}}}
-		dst := []FieldDump{{FieldID: 2, Name: "vec", TypeParams: map[string]string{"dim": "256"}}}
-
+	t.Run("TypeParamsDiff", func(t *testing.T) {
 		var diffs []Diff
-		diffFields(&diffs, src, dst)
+		diffFields(&diffs,
+			[]FieldDump{{FieldID: 2, Name: "vec", TypeParams: map[string]string{"dim": "128"}}},
+			[]FieldDump{{FieldID: 2, Name: "vec", TypeParams: map[string]string{"dim": "256"}}},
+		)
 		assert.Len(t, diffs, 1)
 		assert.Contains(t, diffs[0].Path, "type_params.dim")
+	})
+
+	t.Run("IndexParamsDiff", func(t *testing.T) {
+		var diffs []Diff
+		diffFields(&diffs,
+			[]FieldDump{{FieldID: 2, Name: "f", IndexParams: map[string]string{"a": "1"}}},
+			[]FieldDump{{FieldID: 2, Name: "f", IndexParams: map[string]string{"a": "2"}}},
+		)
+		assert.Len(t, diffs, 1)
+		assert.Contains(t, diffs[0].Path, "index_params.a")
+	})
+
+	t.Run("DescriptionAndStateDiff", func(t *testing.T) {
+		var diffs []Diff
+		diffFields(&diffs,
+			[]FieldDump{{FieldID: 1, Name: "f", Description: "old", State: "FieldCreated", DefaultValue: "0", ElementType: "Int64"}},
+			[]FieldDump{{FieldID: 1, Name: "f", Description: "new", State: "FieldDropping", DefaultValue: "1", ElementType: "VarChar"}},
+		)
+		dm := toDiffMap(diffs)
+		assert.Contains(t, dm, "fields[id=1,name=f].description")
+		assert.Contains(t, dm, "fields[id=1,name=f].state")
+		assert.Contains(t, dm, "fields[id=1,name=f].default_value")
+		assert.Contains(t, dm, "fields[id=1,name=f].element_type")
+	})
+
+	t.Run("Aligned", func(t *testing.T) {
+		f := []FieldDump{{FieldID: 1, Name: "pk", DataType: "Int64"}}
+		var diffs []Diff
+		diffFields(&diffs, f, f)
+		assert.Empty(t, diffs)
 	})
 }
 
@@ -125,128 +165,138 @@ func TestDiffPartitions(t *testing.T) {
 		assert.Empty(t, diffs)
 	})
 
-	t.Run("MissingPartition", func(t *testing.T) {
-		src := []PartitionDump{
-			{PartitionID: 1, PartitionName: "_default", State: "PartitionCreated"},
-			{PartitionID: 2, PartitionName: "part_a", State: "PartitionCreated"},
-		}
-		dst := []PartitionDump{
-			{PartitionID: 1, PartitionName: "_default", State: "PartitionCreated"},
-		}
-
+	t.Run("MissingSrc", func(t *testing.T) {
 		var diffs []Diff
-		diffPartitions(&diffs, src, dst)
+		diffPartitions(&diffs, nil, []PartitionDump{{PartitionID: 1, PartitionName: "p1"}})
 		assert.Len(t, diffs, 1)
-		assert.Contains(t, diffs[0].Path, "id=2")
+		assert.Equal(t, "<missing>", diffs[0].Src)
+	})
+
+	t.Run("MissingDst", func(t *testing.T) {
+		var diffs []Diff
+		diffPartitions(&diffs,
+			[]PartitionDump{{PartitionID: 2, PartitionName: "part_a", State: "PartitionCreated"}},
+			nil,
+		)
+		assert.Len(t, diffs, 1)
 		assert.Equal(t, "part_a", diffs[0].Src)
 		assert.Equal(t, "<missing>", diffs[0].Dst)
 	})
 
-	t.Run("StateDiff", func(t *testing.T) {
-		src := []PartitionDump{{PartitionID: 1, PartitionName: "_default", State: "PartitionCreated"}}
-		dst := []PartitionDump{{PartitionID: 1, PartitionName: "_default", State: "PartitionDropping"}}
-
+	t.Run("NameAndStateDiff", func(t *testing.T) {
 		var diffs []Diff
-		diffPartitions(&diffs, src, dst)
-		assert.Len(t, diffs, 1)
-		assert.Contains(t, diffs[0].Path, "state")
+		diffPartitions(&diffs,
+			[]PartitionDump{{PartitionID: 1, PartitionName: "p1", State: "PartitionCreated"}},
+			[]PartitionDump{{PartitionID: 1, PartitionName: "p2", State: "PartitionDropping"}},
+		)
+		dm := toDiffMap(diffs)
+		assert.Contains(t, dm, "partitions[id=1,name=p1].partition_name")
+		assert.Contains(t, dm, "partitions[id=1,name=p1].state")
 	})
 }
 
 func TestDiffIndexes(t *testing.T) {
 	t.Run("Aligned", func(t *testing.T) {
-		idx := []IndexDump{{
-			IndexID: 1, IndexName: "idx_vec", FieldID: 2,
-			IndexParams: map[string]string{"index_type": "IVF_FLAT", "nlist": "128"},
-			State:       "Finished",
-		}}
+		idx := []IndexDump{{IndexID: 1, IndexName: "idx", FieldID: 2, State: "Finished"}}
 		var diffs []Diff
 		diffIndexes(&diffs, idx, idx)
 		assert.Empty(t, diffs)
 	})
 
-	t.Run("IndexParamsDiff", func(t *testing.T) {
-		src := []IndexDump{{
-			IndexID: 1, IndexName: "idx_vec", FieldID: 2,
-			IndexParams: map[string]string{"index_type": "IVF_FLAT", "nlist": "128"},
-		}}
-		dst := []IndexDump{{
-			IndexID: 1, IndexName: "idx_vec", FieldID: 2,
-			IndexParams: map[string]string{"index_type": "IVF_FLAT", "nlist": "256"},
-		}}
-
+	t.Run("MissingSrc", func(t *testing.T) {
 		var diffs []Diff
-		diffIndexes(&diffs, src, dst)
+		diffIndexes(&diffs, nil, []IndexDump{{IndexID: 1, IndexName: "idx"}})
 		assert.Len(t, diffs, 1)
-		assert.Contains(t, diffs[0].Path, "index_params.nlist")
+		assert.Equal(t, "<missing>", diffs[0].Src)
 	})
 
-	t.Run("MissingIndex", func(t *testing.T) {
-		src := []IndexDump{{IndexID: 1, IndexName: "idx_vec"}}
-		dst := []IndexDump{}
-
+	t.Run("MissingDst", func(t *testing.T) {
 		var diffs []Diff
-		diffIndexes(&diffs, src, dst)
+		diffIndexes(&diffs, []IndexDump{{IndexID: 1, IndexName: "idx"}}, nil)
 		assert.Len(t, diffs, 1)
 		assert.Equal(t, "<missing>", diffs[0].Dst)
 	})
 
-	t.Run("FieldIDDiff", func(t *testing.T) {
-		src := []IndexDump{{IndexID: 1, IndexName: "idx", FieldID: 2}}
-		dst := []IndexDump{{IndexID: 1, IndexName: "idx", FieldID: 3}}
-
+	t.Run("AllFieldsDiff", func(t *testing.T) {
 		var diffs []Diff
-		diffIndexes(&diffs, src, dst)
+		diffIndexes(&diffs,
+			[]IndexDump{{IndexID: 1, IndexName: "a", FieldID: 2, State: "Finished", IsAutoIndex: false, Deleted: false,
+				IndexParams: map[string]string{"nlist": "128"}, TypeParams: map[string]string{"t": "1"}, UserIndexParams: map[string]string{"u": "1"}}},
+			[]IndexDump{{IndexID: 1, IndexName: "b", FieldID: 3, State: "InProgress", IsAutoIndex: true, Deleted: true,
+				IndexParams: map[string]string{"nlist": "256"}, TypeParams: map[string]string{"t": "2"}, UserIndexParams: map[string]string{"u": "2"}}},
+		)
 		dm := toDiffMap(diffs)
-		assert.Contains(t, dm, "indexes[id=1,name=idx].field_id")
+		assert.Contains(t, dm, "indexes[id=1,name=a].index_name")
+		assert.Contains(t, dm, "indexes[id=1,name=a].field_id")
+		assert.Contains(t, dm, "indexes[id=1,name=a].state")
+		assert.Contains(t, dm, "indexes[id=1,name=a].is_auto_index")
+		assert.Contains(t, dm, "indexes[id=1,name=a].deleted")
+		assert.Contains(t, dm, "indexes[id=1,name=a].index_params.nlist")
+		assert.Contains(t, dm, "indexes[id=1,name=a].type_params.t")
+		assert.Contains(t, dm, "indexes[id=1,name=a].user_index_params.u")
 	})
 }
 
 func TestDiffFunctions(t *testing.T) {
 	t.Run("Aligned", func(t *testing.T) {
-		f := []FunctionDump{{
-			ID: 1, Name: "bm25", Type: "BM25",
-			InputFieldNames:  []string{"text"},
-			OutputFieldNames: []string{"sparse"},
-			InputFieldIDs:    []int64{3},
-			OutputFieldIDs:   []int64{4},
+		f := []FunctionDump{{ID: 1, Name: "bm25", Type: "BM25",
+			InputFieldNames: []string{"text"}, OutputFieldNames: []string{"sparse"},
+			InputFieldIDs: []int64{3}, OutputFieldIDs: []int64{4},
+			Params: map[string]string{"k": "v"},
 		}}
 		var diffs []Diff
 		diffFunctions(&diffs, f, f)
 		assert.Empty(t, diffs)
 	})
 
-	t.Run("TypeDiff", func(t *testing.T) {
-		src := []FunctionDump{{ID: 1, Name: "fn", Type: "BM25"}}
-		dst := []FunctionDump{{ID: 1, Name: "fn", Type: "TextEmbedding"}}
-
+	t.Run("MissingSrc", func(t *testing.T) {
 		var diffs []Diff
-		diffFunctions(&diffs, src, dst)
-		dm := toDiffMap(diffs)
-		assert.Contains(t, dm, "functions[id=1,name=fn].type")
+		diffFunctions(&diffs, nil, []FunctionDump{{ID: 1, Name: "fn"}})
+		assert.Len(t, diffs, 1)
+		assert.Equal(t, "<missing>", diffs[0].Src)
 	})
 
-	t.Run("FieldIDsDiff", func(t *testing.T) {
-		src := []FunctionDump{{ID: 1, Name: "fn", InputFieldIDs: []int64{3, 4}}}
-		dst := []FunctionDump{{ID: 1, Name: "fn", InputFieldIDs: []int64{3, 5}}}
-
+	t.Run("MissingDst", func(t *testing.T) {
 		var diffs []Diff
-		diffFunctions(&diffs, src, dst)
+		diffFunctions(&diffs, []FunctionDump{{ID: 1, Name: "fn"}}, nil)
 		assert.Len(t, diffs, 1)
-		assert.Contains(t, diffs[0].Path, "input_field_ids")
+		assert.Equal(t, "<missing>", diffs[0].Dst)
+	})
+
+	t.Run("AllFieldsDiff", func(t *testing.T) {
+		var diffs []Diff
+		diffFunctions(&diffs,
+			[]FunctionDump{{ID: 1, Name: "fn", Description: "a", Type: "BM25",
+				InputFieldIDs: []int64{3}, InputFieldNames: []string{"text"},
+				OutputFieldIDs: []int64{4}, OutputFieldNames: []string{"sparse"},
+				Params: map[string]string{"k": "v1"}}},
+			[]FunctionDump{{ID: 1, Name: "fn2", Description: "b", Type: "Embed",
+				InputFieldIDs: []int64{5}, InputFieldNames: []string{"doc"},
+				OutputFieldIDs: []int64{6}, OutputFieldNames: []string{"dense"},
+				Params: map[string]string{"k": "v2"}}},
+		)
+		dm := toDiffMap(diffs)
+		assert.Contains(t, dm, "functions[id=1,name=fn].name")
+		assert.Contains(t, dm, "functions[id=1,name=fn].description")
+		assert.Contains(t, dm, "functions[id=1,name=fn].type")
+		assert.Contains(t, dm, "functions[id=1,name=fn].input_field_ids")
+		assert.Contains(t, dm, "functions[id=1,name=fn].input_field_names")
+		assert.Contains(t, dm, "functions[id=1,name=fn].output_field_ids")
+		assert.Contains(t, dm, "functions[id=1,name=fn].output_field_names")
+		assert.Contains(t, dm, "functions[id=1,name=fn].params.k")
 	})
 }
 
 func TestDiffMap(t *testing.T) {
 	t.Run("BothNil", func(t *testing.T) {
 		var diffs []Diff
-		diffMap(&diffs, "props", nil, nil)
+		diffMap(&diffs, "p", nil, nil)
 		assert.Empty(t, diffs)
 	})
 
 	t.Run("SrcOnly", func(t *testing.T) {
 		var diffs []Diff
-		diffMap(&diffs, "props", map[string]string{"a": "1"}, nil)
+		diffMap(&diffs, "p", map[string]string{"a": "1"}, nil)
 		assert.Len(t, diffs, 1)
 		assert.Equal(t, "1", diffs[0].Src)
 		assert.Equal(t, "<missing>", diffs[0].Dst)
@@ -254,10 +304,9 @@ func TestDiffMap(t *testing.T) {
 
 	t.Run("DstOnly", func(t *testing.T) {
 		var diffs []Diff
-		diffMap(&diffs, "props", nil, map[string]string{"a": "1"})
+		diffMap(&diffs, "p", nil, map[string]string{"a": "1"})
 		assert.Len(t, diffs, 1)
 		assert.Equal(t, "<missing>", diffs[0].Src)
-		assert.Equal(t, "1", diffs[0].Dst)
 	})
 
 	t.Run("ValueDiff", func(t *testing.T) {
@@ -321,18 +370,17 @@ func TestDiffInt64Slice(t *testing.T) {
 }
 
 func TestCollectIDs(t *testing.T) {
-	a := map[int64]string{3: "c", 1: "a"}
-	b := map[int64]string{2: "b", 1: "a"}
-	ids := collectIDs(a, b)
-	assert.Equal(t, []int64{1, 2, 3}, ids)
+	t.Run("MergedAndSorted", func(t *testing.T) {
+		ids := collectIDs(map[int64]string{3: "c", 1: "a"}, map[int64]string{2: "b", 1: "a"})
+		assert.Equal(t, []int64{1, 2, 3}, ids)
+	})
+
+	t.Run("Empty", func(t *testing.T) {
+		ids := collectIDs(map[int64]string{}, map[int64]string{})
+		assert.Empty(t, ids)
+	})
 }
 
-func TestCollectIDs_Empty(t *testing.T) {
-	ids := collectIDs(map[int64]string{}, map[int64]string{})
-	assert.Empty(t, ids)
-}
-
-// helper to convert diffs slice to map for easier assertions
 func toDiffMap(diffs []Diff) map[string]Diff {
 	m := make(map[string]Diff, len(diffs))
 	for _, d := range diffs {
