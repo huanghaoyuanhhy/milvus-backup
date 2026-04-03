@@ -43,7 +43,7 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "error: connect source etcd: %v\n", err)
 		return 1
 	}
-	defer func() { _ = srcCli.Close() }()
+	defer srcCli.Close() //nolint:errcheck // best-effort cleanup
 
 	dstCli, err := clientv3.New(clientv3.Config{
 		Endpoints:   strings.Split(*dstEndpoints, ","),
@@ -53,7 +53,7 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "error: connect destination etcd: %v\n", err)
 		return 1
 	}
-	defer func() { _ = dstCli.Close() }()
+	defer dstCli.Close() //nolint:errcheck // best-effort cleanup
 
 	srcReader := &reader{cli: srcCli, rootPath: *srcRootPath}
 	srcDump, err := srcReader.findCollection(ctx, *dbName, *collection)
