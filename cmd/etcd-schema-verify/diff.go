@@ -10,13 +10,13 @@ func diffCollections(src, dst *CollectionDump) []Diff {
 	var diffs []Diff
 
 	// collection-level fields
-	cmpInt64(&diffs, "id", src.ID, dst.ID)
-	cmpInt64(&diffs, "db_id", src.DBID, dst.DBID)
-	cmpStr(&diffs, "name", src.Name, dst.Name)
-	cmpStr(&diffs, "description", src.Description, dst.Description)
-	cmpStr(&diffs, "state", src.State, dst.State)
-	cmpInt32(&diffs, "shards_num", src.ShardsNum, dst.ShardsNum)
-	cmpStr(&diffs, "consistency_level", src.ConsistencyLevel, dst.ConsistencyLevel)
+	cmp(&diffs, "id", src.ID, dst.ID)
+	cmp(&diffs, "db_id", src.DBID, dst.DBID)
+	cmp(&diffs, "name", src.Name, dst.Name)
+	cmp(&diffs, "description", src.Description, dst.Description)
+	cmp(&diffs, "state", src.State, dst.State)
+	cmp(&diffs, "shards_num", src.ShardsNum, dst.ShardsNum)
+	cmp(&diffs, "consistency_level", src.ConsistencyLevel, dst.ConsistencyLevel)
 	diffMap(&diffs, "properties", src.Properties, dst.Properties)
 
 	// fields: match by field ID (CDC preserves IDs)
@@ -65,20 +65,20 @@ func diffFields(diffs *[]Diff, src, dst []FieldDump) {
 			continue
 		}
 
-		cmpStr(diffs, label+".name", sf.Name, df.Name)
-		cmpStr(diffs, label+".description", sf.Description, df.Description)
-		cmpStr(diffs, label+".data_type", sf.DataType, df.DataType)
-		cmpStr(diffs, label+".element_type", sf.ElementType, df.ElementType)
+		cmp(diffs, label+".name", sf.Name, df.Name)
+		cmp(diffs, label+".description", sf.Description, df.Description)
+		cmp(diffs, label+".data_type", sf.DataType, df.DataType)
+		cmp(diffs, label+".element_type", sf.ElementType, df.ElementType)
 		diffMap(diffs, label+".type_params", sf.TypeParams, df.TypeParams)
 		diffMap(diffs, label+".index_params", sf.IndexParams, df.IndexParams)
-		cmpBool(diffs, label+".is_primary_key", sf.IsPrimaryKey, df.IsPrimaryKey)
-		cmpBool(diffs, label+".auto_id", sf.AutoID, df.AutoID)
-		cmpBool(diffs, label+".is_partition_key", sf.IsPartitionKey, df.IsPartitionKey)
-		cmpBool(diffs, label+".is_clustering_key", sf.IsClusteringKey, df.IsClusteringKey)
-		cmpBool(diffs, label+".is_function_output", sf.IsFunctionOutput, df.IsFunctionOutput)
-		cmpBool(diffs, label+".nullable", sf.Nullable, df.Nullable)
-		cmpStr(diffs, label+".default_value", sf.DefaultValue, df.DefaultValue)
-		cmpStr(diffs, label+".state", sf.State, df.State)
+		cmp(diffs, label+".is_primary_key", sf.IsPrimaryKey, df.IsPrimaryKey)
+		cmp(diffs, label+".auto_id", sf.AutoID, df.AutoID)
+		cmp(diffs, label+".is_partition_key", sf.IsPartitionKey, df.IsPartitionKey)
+		cmp(diffs, label+".is_clustering_key", sf.IsClusteringKey, df.IsClusteringKey)
+		cmp(diffs, label+".is_function_output", sf.IsFunctionOutput, df.IsFunctionOutput)
+		cmp(diffs, label+".nullable", sf.Nullable, df.Nullable)
+		cmp(diffs, label+".default_value", sf.DefaultValue, df.DefaultValue)
+		cmp(diffs, label+".state", sf.State, df.State)
 	}
 }
 
@@ -113,8 +113,8 @@ func diffPartitions(diffs *[]Diff, src, dst []PartitionDump) {
 			continue
 		}
 
-		cmpStr(diffs, label+".partition_name", sp.PartitionName, dp.PartitionName)
-		cmpStr(diffs, label+".state", sp.State, dp.State)
+		cmp(diffs, label+".partition_name", sp.PartitionName, dp.PartitionName)
+		cmp(diffs, label+".state", sp.State, dp.State)
 	}
 }
 
@@ -149,14 +149,14 @@ func diffIndexes(diffs *[]Diff, src, dst []IndexDump) {
 			continue
 		}
 
-		cmpStr(diffs, label+".index_name", si.IndexName, di.IndexName)
-		cmpInt64(diffs, label+".field_id", si.FieldID, di.FieldID)
+		cmp(diffs, label+".index_name", si.IndexName, di.IndexName)
+		cmp(diffs, label+".field_id", si.FieldID, di.FieldID)
 		diffMap(diffs, label+".type_params", si.TypeParams, di.TypeParams)
 		diffMap(diffs, label+".index_params", si.IndexParams, di.IndexParams)
 		diffMap(diffs, label+".user_index_params", si.UserIndexParams, di.UserIndexParams)
-		cmpBool(diffs, label+".is_auto_index", si.IsAutoIndex, di.IsAutoIndex)
-		cmpStr(diffs, label+".state", si.State, di.State)
-		cmpBool(diffs, label+".deleted", si.Deleted, di.Deleted)
+		cmp(diffs, label+".is_auto_index", si.IsAutoIndex, di.IsAutoIndex)
+		cmp(diffs, label+".state", si.State, di.State)
+		cmp(diffs, label+".deleted", si.Deleted, di.Deleted)
 	}
 }
 
@@ -191,9 +191,9 @@ func diffFunctions(diffs *[]Diff, src, dst []FunctionDump) {
 			continue
 		}
 
-		cmpStr(diffs, label+".name", sf.Name, df.Name)
-		cmpStr(diffs, label+".description", sf.Description, df.Description)
-		cmpStr(diffs, label+".type", sf.Type, df.Type)
+		cmp(diffs, label+".name", sf.Name, df.Name)
+		cmp(diffs, label+".description", sf.Description, df.Description)
+		cmp(diffs, label+".type", sf.Type, df.Type)
 		diffInt64Slice(diffs, label+".input_field_ids", sf.InputFieldIDs, df.InputFieldIDs)
 		diffStrSlice(diffs, label+".input_field_names", sf.InputFieldNames, df.InputFieldNames)
 		diffInt64Slice(diffs, label+".output_field_ids", sf.OutputFieldIDs, df.OutputFieldIDs)
@@ -204,25 +204,7 @@ func diffFunctions(diffs *[]Diff, src, dst []FunctionDump) {
 
 // --- comparison helpers ---
 
-func cmpStr(diffs *[]Diff, path, src, dst string) {
-	if src != dst {
-		*diffs = append(*diffs, Diff{Path: path, Src: src, Dst: dst})
-	}
-}
-
-func cmpInt64(diffs *[]Diff, path string, src, dst int64) {
-	if src != dst {
-		*diffs = append(*diffs, Diff{Path: path, Src: fmt.Sprintf("%d", src), Dst: fmt.Sprintf("%d", dst)})
-	}
-}
-
-func cmpInt32(diffs *[]Diff, path string, src, dst int32) {
-	if src != dst {
-		*diffs = append(*diffs, Diff{Path: path, Src: fmt.Sprintf("%d", src), Dst: fmt.Sprintf("%d", dst)})
-	}
-}
-
-func cmpBool(diffs *[]Diff, path string, src, dst bool) {
+func cmp[T comparable](diffs *[]Diff, path string, src, dst T) {
 	if src != dst {
 		*diffs = append(*diffs, Diff{Path: path, Src: fmt.Sprintf("%v", src), Dst: fmt.Sprintf("%v", dst)})
 	}
