@@ -71,7 +71,7 @@ func (r *reader) findCollection(ctx context.Context, dbName, collName string) (*
 }
 
 func (r *reader) listDatabases(ctx context.Context) ([]*etcdpb.DatabaseInfo, error) {
-	prefix := r.prefix("root-coord", "database", "db-info") + "/"
+	prefix := r.prefix("meta", "root-coord", "database", "db-info") + "/"
 	resp, err := r.cli.Get(ctx, prefix, clientv3.WithPrefix())
 	if err != nil {
 		return nil, err
@@ -98,14 +98,14 @@ func (r *reader) listDatabases(ctx context.Context) ([]*etcdpb.DatabaseInfo, err
 }
 
 func (r *reader) listCollections(ctx context.Context, dbID int64) ([]*etcdpb.CollectionInfo, error) {
-	prefix := r.prefix("root-coord", "database", "collection-info", strconv.FormatInt(dbID, 10)) + "/"
+	prefix := r.prefix("meta", "root-coord", "database", "collection-info", strconv.FormatInt(dbID, 10)) + "/"
 	colls, err := r.getCollections(ctx, prefix)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(colls) == 0 && dbID == 0 {
-		prefix = r.prefix("root-coord", "collection") + "/"
+		prefix = r.prefix("meta", "root-coord", "collection") + "/"
 		colls, err = r.getCollections(ctx, prefix)
 		if err != nil {
 			return nil, err
@@ -190,7 +190,7 @@ func (r *reader) loadCollectionDetail(ctx context.Context, coll *etcdpb.Collecti
 }
 
 func (r *reader) listFields(ctx context.Context, collID int64) ([]*schemapb.FieldSchema, error) {
-	prefix := r.prefix("root-coord", "fields", strconv.FormatInt(collID, 10)) + "/"
+	prefix := r.prefix("meta", "root-coord", "fields", strconv.FormatInt(collID, 10)) + "/"
 	resp, err := r.cli.Get(ctx, prefix, clientv3.WithPrefix())
 	if err != nil {
 		return nil, err
@@ -224,7 +224,7 @@ func mergeFields(d *CollectionDump, sepFields []*schemapb.FieldSchema) {
 }
 
 func (r *reader) listPartitions(ctx context.Context, collID int64) ([]PartitionDump, error) {
-	prefix := r.prefix("root-coord", "partitions", strconv.FormatInt(collID, 10)) + "/"
+	prefix := r.prefix("meta", "root-coord", "partitions", strconv.FormatInt(collID, 10)) + "/"
 	resp, err := r.cli.Get(ctx, prefix, clientv3.WithPrefix())
 	if err != nil {
 		return nil, err
@@ -276,7 +276,7 @@ func (r *reader) listIndexes(ctx context.Context, collID int64) ([]IndexDump, er
 }
 
 func (r *reader) listFunctions(ctx context.Context, collID int64) ([]FunctionDump, error) {
-	prefix := r.prefix("root-coord", "functions", strconv.FormatInt(collID, 10)) + "/"
+	prefix := r.prefix("meta", "root-coord", "functions", strconv.FormatInt(collID, 10)) + "/"
 	resp, err := r.cli.Get(ctx, prefix, clientv3.WithPrefix())
 	if err != nil {
 		return nil, err

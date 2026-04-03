@@ -175,6 +175,6 @@ func TestMergeFields(t *testing.T) {
 
 func TestReaderPrefix(t *testing.T) {
 	r := &reader{rootPath: "by-dev"}
-	assert.Equal(t, "by-dev/root-coord/database/db-info", r.prefix("root-coord", "database", "db-info"))
+	assert.Equal(t, "by-dev/meta/root-coord/database/db-info", r.prefix("meta", "root-coord", "database", "db-info"))
 	assert.Equal(t, "by-dev/meta/field-index/100", r.prefix("meta", "field-index", "100"))
 }
