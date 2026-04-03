@@ -720,6 +720,7 @@ jobs:
         timeout-minutes: 1
         shell: bash
         run: |
+          set -o pipefail
           for coll in hello_milvus hello_milvus2; do
             echo "=== Verifying schema: ${coll} ==="
             ./etcd-schema-verify \
