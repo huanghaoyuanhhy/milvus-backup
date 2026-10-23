@@ -1,0 +1,286 @@
+name: Bisect secondary 2pc
+
+# Dispatch-only harness for bisecting the milvus nightly regression that
+# breaks the secondary two-phase-commit restore leg. Runs exactly the
+# same-version-3.0 scenario from main.yaml with the milvus image pinned to
+# the dispatch input, so each candidate milvus commit is one run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'milvusdb/milvus tag to pin both clusters to (e.g. 3.0-20261022-0f2cbbdc)'
+        required: true
+        type: string
+
+env:
+  go-version: 1.26
+
+jobs:
+  test-backup-restore-secondary:
+    name: Backup and restore secondary (${{ inputs.image_tag }})
+    runs-on: ubuntu-latest
+    # The master scenario runs for signal but does not gate CI (see
+    # cross-version for the rationale).
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+          cache: pip
+
+      - uses: actions/setup-go@v7
+        name: Set up Go ${{ env.go-version }}
+        with:
+          go-version: ${{ env.go-version }}
+          cache: true
+
+      - name: Build
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          go get
+          go build
+          go build -o inittarget ./cmd/inittarget
+          go build -o etcd-schema-verify ./cmd/etcd-schema-verify
+
+      - name: Install dependency
+        timeout-minutes: 5
+        working-directory: tests
+        shell: bash
+        run: |
+          pip install -r requirements.txt --trusted-host https://test.pypi.org
+
+      - name: Deploy dual Milvus (prepare image)
+        timeout-minutes: 15
+        shell: bash
+        working-directory: deployment/secondary
+        run: |
+          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ inputs.image_tag }}) && echo $tag
+          yq -i ".services.upstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          yq -i ".services.downstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          yq -i ".services.upstream-cdc.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          mkdir -p volumes/etcd volumes/minio volumes/upstream volumes/downstream volumes/upstream-runtime volumes/downstream-runtime
+          sudo chmod -R 777 volumes
+          sudo docker compose -f docker-compose.yml up -d --wait
+          sudo docker compose -f docker-compose.yml ps -a
+
+      - name: Export docker-compose status after deploy
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/secondary
+        run: |
+          echo "=== Docker Compose Status ==="
+          sudo docker compose -f docker-compose.yml ps -a || true
+          echo "=== Upstream Container Logs ==="
+          sudo docker compose -f docker-compose.yml logs upstream-standalone || true
+          echo "=== Downstream Container Logs ==="
+          sudo docker compose -f docker-compose.yml logs downstream-standalone || true
+
+      - name: Configure backup.yaml for upstream
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          yq -i '.log.level = "debug"' configs/backup.yaml
+          yq -i '.milvus.grpc.port = 19530' configs/backup.yaml
+          yq -i '.milvus.storage.bucketName = "milvus-backup-test"' configs/backup.yaml
+          yq -i '.milvus.storage.rootPath = "backup-test-upstream"' configs/backup.yaml
+          yq -i '.backup.storage.bucketName = "milvus-backup-test"' configs/backup.yaml
+          yq -i '.milvus.replicate.rpcChannelName = "backup-test-upstream-replicate-msg"' configs/backup.yaml
+          yq -i '.milvus.etcd.rootPath = "backup-test-upstream"' configs/backup.yaml
+          cat configs/backup.yaml
+
+      - name: Prepare data on upstream
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/prepare_data.py --uri http://127.0.0.1:19530
+          python example/prepare_data.py --uri http://127.0.0.1:19530 --scenario added
+
+      - name: Upgrade dual Milvus to run image
+        if: false
+        timeout-minutes: 15
+        shell: bash
+        working-directory: deployment/secondary
+        run: |
+          # Stop containers but keep bind-mounted volumes (./volumes/*) so the
+          # collection schema written by the prepare image — including its
+          # version-specific $meta attributes — survives the upgrade.
+          sudo docker compose -f docker-compose.yml down
+          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ inputs.image_tag }}) && echo $tag
+          yq -i ".services.upstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          yq -i ".services.downstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          yq -i ".services.upstream-cdc.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          sudo docker compose -f docker-compose.yml up -d --wait
+          sudo docker compose -f docker-compose.yml ps -a
+
+      - name: Create index and load on upstream
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          python -c "
+          from pymilvus import connections, Collection
+          connections.connect('default', uri='http://127.0.0.1:19530')
+          index = {'index_type': 'IVF_FLAT', 'metric_type': 'L2', 'params': {'nlist': 128}}
+          for name in ['hello_milvus', 'hello_milvus2', 'hello_milvus_dynamic', 'hello_milvus_added']:
+              c = Collection(name)
+              c.create_index('embeddings', index)
+              c.load()
+              print(f'{name}: loaded, entities={c.num_entities}')
+          "
+
+      - name: List MinIO files before backup
+        shell: bash
+        working-directory: deployment/secondary
+        run: |
+          sudo apt-get install -y tree > /dev/null 2>&1 || true
+          echo "=== MinIO volume tree (before backup) ==="
+          sudo tree volumes/minio/ -I '.minio.sys' | head -500
+
+      - name: Create backup
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup check
+          ./milvus-backup list
+          # Pin binlog until ExportSnapshot lands on the milvus master line: master
+          # reports the snapshot feature, so auto resolves to the snapshot format
+          # there, which its export RPC does not implement yet.
+          ./milvus-backup create -n my_backup --backup_index_extra --format=binlog
+          ./milvus-backup list
+
+      - name: Init downstream replicate configuration
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          ./inittarget --target downstream \
+            --upstream-uri upstream-standalone:19530 \
+            --downstream-uri downstream-standalone:19530
+
+      - name: Configure backup.yaml for downstream
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          yq -i '.milvus.grpc.port = 19500' configs/backup.yaml
+          cat configs/backup.yaml
+
+      - name: Restore secondary
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup restore secondary -n my_backup \
+            --source_cluster_id backup-test-upstream \
+            --target_cluster_id backup-test-downstream
+
+      - name: Verify etcd schema alignment
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          set -o pipefail
+          for coll in hello_milvus hello_milvus2 hello_milvus_dynamic hello_milvus_added; do
+            echo "=== Verifying schema: ${coll} ==="
+            ./etcd-schema-verify \
+              -src-endpoints localhost:2379 \
+              -dst-endpoints localhost:2379 \
+              -src-root-path backup-test-upstream \
+              -dst-root-path backup-test-downstream \
+              -collection "${coll}" | tee /tmp/schema_verify_${coll}.json
+            echo "Schema aligned for ${coll}"
+          done
+
+      - name: Init upstream replicate configuration
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          ./inittarget --target upstream \
+            --upstream-uri upstream-standalone:19530 \
+            --downstream-uri downstream-standalone:19530
+
+      # Two-phase import restore: restore the backup back into the upstream
+      # (now a replication source) with --secondaries aimed at the downstream,
+      # so every import job holds at Uncommitted until its mirror shows up on
+      # the secondary and is then committed on both ends. 3.0+ only: the
+      # commit endpoint and the enableInReplicatingCluster toggle exist on
+      # 3.0 (the renamed 2.7 line) and master alone.
+      - name: Restore into upstream with two-phase commit
+        if: true
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          yq -i '.milvus.grpc.port = 19530' configs/backup.yaml
+          ./milvus-backup restore -n my_backup --suffix _2pc --secondaries http://127.0.0.1:19500
+
+      - name: Verify two-phase restore on both ends
+        if: true
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python - <<'EOF'
+          import time
+          from pymilvus import connections, Collection
+
+          names = ['hello_milvus_2pc', 'hello_milvus2_2pc',
+                   'hello_milvus_dynamic_2pc', 'hello_milvus_added_2pc']
+
+          def counts(uri, alias):
+              connections.connect(alias, uri=uri)
+              try:
+                  return {name: Collection(name, using=alias).num_entities for name in names}
+              finally:
+                  connections.disconnect(alias)
+
+          local = counts('http://127.0.0.1:19530', 'local')
+          print('upstream counts:', local)
+          assert all(n > 0 for n in local.values()), local
+
+          # The replicated commit lands on the downstream mirror asynchronously,
+          # so the secondary's counts converge with some lag.
+          secondary = {}
+          for attempt in range(30):
+              secondary = counts('http://127.0.0.1:19500', 'secondary')
+              if secondary == local:
+                  break
+              print(f'attempt {attempt}: downstream {secondary} != upstream {local}, waiting')
+              time.sleep(10)
+          print('downstream counts:', secondary)
+          assert secondary == local, (secondary, local)
+          EOF
+
+      - name: Verify data on downstream
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/secondary/verify_data.py --uri http://127.0.0.1:19500
+
+      - name: List MinIO files after backup
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/secondary
+        run: |
+          echo "=== MinIO volume tree (after backup) ==="
+          sudo tree volumes/minio/ -I '.minio.sys' | head -500
+
+      - name: Export logs
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/secondary
+        run: |
+          mkdir -p /tmp/ci_logs
+          sudo docker compose -f docker-compose.yml logs upstream-standalone > /tmp/ci_logs/upstream.log 2>&1 || true
+          sudo docker compose -f docker-compose.yml logs upstream-cdc > /tmp/ci_logs/upstream-cdc.log 2>&1 || true
+          sudo docker compose -f docker-compose.yml logs downstream-standalone > /tmp/ci_logs/downstream.log 2>&1 || true
+          sudo docker compose -f docker-compose.yml logs etcd > /tmp/ci_logs/etcd.log 2>&1 || true
+          sudo docker compose -f docker-compose.yml logs minio > /tmp/ci_logs/minio.log 2>&1 || true
+
+      - name: Upload logs
+        if: ${{ ! success() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: secondary-restore-logs-${{ inputs.image_tag }}
+          path: |
+            /tmp/ci_logs
+            /tmp/schema_verify_*.json
+            ./server.log
+
